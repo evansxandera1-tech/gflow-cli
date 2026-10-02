@@ -1,0 +1,13 @@
+{
+  "name": "mervox-cloud-free",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mervox Cloud Free - generacion vertical 9:16 con Cloudflare Workers AI",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
