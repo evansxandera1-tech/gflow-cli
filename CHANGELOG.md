@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Native Termux browser launches select `$PREFIX/lib/chromium/chrome` via
+  `executable_path`, require DISPLAY, and remain headed. Login, session readers
+  and generation share the selection; `CHROME_BINARY` overrides it on all platforms.
+  Persistent profiles and desktop defaults are retained. Android/Google Flow live
+  acceptance remains pending device access; see [Termux setup](docs/TERMUX.md).
+
 ## [0.82.1] — 2026-10-02
 
 ### Fixed

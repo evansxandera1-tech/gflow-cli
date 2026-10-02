@@ -9,7 +9,12 @@ from typing import TYPE_CHECKING
 import structlog
 from rich.console import Console
 
-from gflow_cli.browser_manager import is_playwright_chrome_channel_available
+from gflow_cli.browser_manager import (
+    browser_launch_options,
+    is_playwright_chrome_channel_available,
+    is_termux,
+    resolved_chrome_binary,
+)
 from gflow_cli.config import Settings, get_settings
 from gflow_cli.errors import (
     AuthBrowserRejectedError,
@@ -206,6 +211,8 @@ async def _await_chrome_close(proc: asyncio.subprocess.Process, timeout_seconds:
 
 def find_chrome_executable() -> str | None:
     """Find the system Google Chrome executable path."""
+    if is_termux() or os.environ.get("CHROME_BINARY"):
+        return resolved_chrome_binary()
     if sys.platform == "win32":
         paths = [
             os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
@@ -263,6 +270,11 @@ class RealChromeStrategy(AuthStrategy):
         """Sign in to Flow in real Chrome, then verify what landed on disk."""
         settings = get_settings()
         _validate_profile_dir(profile_dir, settings)
+        if is_termux():
+            # Validate DISPLAY/binary before making a profile or starting the
+            # driver, and never route an Android login to headless fallback.
+            browser_launch_options(channel=None, headless=False)
+            headless = False
         profile_dir.mkdir(parents=True, exist_ok=True)
 
         logger.info("auth_login_started", profile_dir=str(profile_dir), strategy=self.name)
@@ -276,7 +288,8 @@ class RealChromeStrategy(AuthStrategy):
         # `--headless=new` branch that predates this change, so routing there is both the
         # measured option and the smaller one. Not reachable from the CLI today
         # (`auth login` exposes no --headless); this guards library callers.
-        if headless or not is_playwright_chrome_channel_available():
+        explicit_binary = is_termux() or bool(os.environ.get("CHROME_BINARY"))
+        if headless or (not explicit_binary and not is_playwright_chrome_channel_available()):
             fallback_reason = "headless" if headless else "channel_unavailable"
         else:
             try:
@@ -335,6 +348,10 @@ class RealChromeStrategy(AuthStrategy):
                     **login_launch_kwargs(profile_dir, headless, channel="chrome"),
                 )
             except Exception as exc:
+                if is_termux():
+                    # Do not replace a native launch failure with a second,
+                    # unobserved subprocess login on Android.
+                    raise
                 logger.warning(
                     "auth_login_launch_failed",
                     strategy=self.name,
@@ -364,6 +381,8 @@ class RealChromeStrategy(AuthStrategy):
                 # Re-raised inside the `async with`, so the driver still stops
                 # and the lease still releases on the way out.
                 raise cancelled
+        if rejected and is_termux():
+            raise AuthBrowserRejectedError("Google rejected the Termux Chromium sign-in.")
         return "browser_rejected" if rejected else None
 
     async def _await_flow_session(self, ctx: Any) -> None:

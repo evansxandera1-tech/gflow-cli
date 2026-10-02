@@ -1074,6 +1074,7 @@ class UiAutomationTransport(VideoGenerationMixin):
             import os
 
             from gflow_cli.browser_manager import (
+                browser_launch_options,
                 channel_for_profile,
                 ensure_profile_engine_compatible,
                 window_position_args,
@@ -1087,15 +1088,18 @@ class UiAutomationTransport(VideoGenerationMixin):
             self._lease = await ProfileLease(profile_dir).aacquire()
             locale_env = os.getenv("GFLOW_CLI_LOCALE", "en-US")
             channel = channel_for_profile(profile_dir)
+            options = browser_launch_options(channel=channel, headless=False)
             # #477: refuse a bundled-Chromium open of a profile last written by
             # a newer Chromium — downgrade cleanup can shred the session store.
-            ensure_profile_engine_compatible(profile_dir, channel)
+            ensure_profile_engine_compatible(
+                profile_dir, channel, executable_path=options.get("executable_path")
+            )
             ctx = await pw.chromium.launch_persistent_context(
                 str(profile_dir),
-                headless=False,
+                **options,
                 viewport=cast("ViewportSize", _VIEWPORT),
                 locale=locale_env,
-                channel=channel,
+                ignore_default_args=["--enable-automation"],
                 args=[
                     "--disable-blink-features=AutomationControlled",
                     "--password-store=basic",

@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 
-from gflow_cli.browser_manager import channel_for_profile
+from gflow_cli.browser_manager import (
+    browser_launch_options,
+    channel_for_profile,
+    chrome_strategy_requested,
+)
 from gflow_cli.errors import SecurityError
 from gflow_cli.paths import get_cookies_path
 from gflow_cli.profile_lease import ProfileLease
@@ -137,7 +141,10 @@ def _get_chrome_cookies3(profile_dir: Path) -> ChromeCookieSnapshot:
 async def _get_chrome_cookies_playwright(profile_dir: Path) -> ChromeCookieSnapshot:
     """Slow path: extract cookies through a marker-gated Chrome Playwright context."""
     channel = channel_for_profile(profile_dir)
-    if channel != "chrome":
+    options = browser_launch_options(channel=channel, headless=True)
+    if channel != "chrome" and not (
+        chrome_strategy_requested(profile_dir) and options.get("executable_path")
+    ):
         msg = (
             "Chrome-strategy marker missing for Playwright fallback. "
             "Re-run `gflow auth login --browser chrome` to rewrite the profile marker."
@@ -156,8 +163,7 @@ async def _get_chrome_cookies_playwright(profile_dir: Path) -> ChromeCookieSnaps
     async with ProfileLease(profile_dir), async_playwright() as pw:
         ctx = await pw.chromium.launch_persistent_context(
             user_data_dir=str(profile_dir),
-            channel=channel,
-            headless=True,
+            **options,
             args=["--password-store=basic"],
         )
         try:

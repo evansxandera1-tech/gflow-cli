@@ -7,6 +7,7 @@ import structlog
 from playwright.async_api import Error as PlaywrightError
 from rich.console import Console
 
+from gflow_cli.browser_manager import browser_launch_options
 from gflow_cli.config import get_settings
 from gflow_cli.errors import (
     AuthBrowserRejectedError,
@@ -66,8 +67,6 @@ def login_launch_kwargs(
     """
     return {
         "user_data_dir": str(profile_dir),
-        "channel": channel,
-        "headless": headless,
         # A human signs into this window, so let it be a REAL window: an
         # explicit viewport makes Playwright emulate that size independently of
         # the OS window and pushes Google's sign-in form off-screen on
@@ -78,6 +77,7 @@ def login_launch_kwargs(
         # --no-sandbox: an extra automation signal plus Chrome's "unsupported
         # command-line flag" banner.
         "chromium_sandbox": True,
+        **browser_launch_options(channel=channel, headless=headless),
         "ignore_default_args": ["--enable-automation"],
         "args": [
             "--disable-blink-features=AutomationControlled",

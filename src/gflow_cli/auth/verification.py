@@ -281,7 +281,10 @@ async def verify_flow_session(
     status_code: int
     body: str
     try:
-        from gflow_cli.browser_manager import ensure_profile_engine_compatible
+        from gflow_cli.browser_manager import (
+            browser_launch_options,
+            ensure_profile_engine_compatible,
+        )
 
         # Own the profile for this headless probe context (D3). Lease is the
         # OUTER context so it releases only after the driver stops. Contention
@@ -292,12 +295,14 @@ async def verify_flow_session(
             # 'Last Version' the holder rewrites as it releases): the probe
             # must not trigger downgrade cleanup either. Inside the
             # fail-closed wrapper, so the refusal maps to VERIFICATION_ERROR.
-            ensure_profile_engine_compatible(profile_dir, channel)
+            options = browser_launch_options(channel=channel, headless=True)
+            ensure_profile_engine_compatible(
+                profile_dir, channel, executable_path=options.get("executable_path")
+            )
             async with async_playwright() as pw:
                 ctx = await pw.chromium.launch_persistent_context(
                     user_data_dir=str(profile_dir),
-                    channel=channel,
-                    headless=True,
+                    **options,
                     args=["--password-store=basic"],
                 )
                 try:
@@ -443,11 +448,12 @@ async def _verify_migrated_host_fallback(
     from .strategies import async_playwright
 
     try:
+        from gflow_cli.browser_manager import browser_launch_options
+
         async with async_playwright() as pw:
             ctx = await pw.chromium.launch_persistent_context(
                 user_data_dir=str(profile_dir),
-                channel="chrome",
-                headless=True,
+                **browser_launch_options(channel="chrome", headless=True),
                 args=["--password-store=basic"],
             )
             try:

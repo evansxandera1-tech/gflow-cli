@@ -160,13 +160,19 @@ class EvaluateFetchTransport:
             self._lease = await ProfileLease(profile_dir).aacquire()
             # #477 guard AFTER the lease: a pre-wait check would validate a
             # 'Last Version' the holder rewrites as it releases (TOCTOU).
-            from gflow_cli.browser_manager import ensure_profile_engine_compatible
+            from gflow_cli.browser_manager import (
+                browser_launch_options,
+                ensure_profile_engine_compatible,
+            )
 
-            ensure_profile_engine_compatible(profile_dir, None)
+            options = browser_launch_options(channel=None, headless=True)
+            ensure_profile_engine_compatible(
+                profile_dir, None, executable_path=options.get("executable_path")
+            )
             pw = await pw_cm.__aenter__()
             ctx = await pw.chromium.launch_persistent_context(
                 str(profile_dir),
-                headless=True,
+                **options,
                 args=[
                     "--disable-blink-features=AutomationControlled",
                     "--password-store=basic",

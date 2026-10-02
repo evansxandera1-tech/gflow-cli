@@ -83,7 +83,12 @@ from gflow_cli.api.video import (
 )
 from gflow_cli.api.video_extend import ExtendStarted
 from gflow_cli.auth.internal_chromium import GOOGLE_REJECTED_BROWSER_ROUTE
-from gflow_cli.browser_manager import channel_for_profile, window_position_args
+from gflow_cli.browser_manager import (
+    browser_launch_options,
+    channel_for_profile,
+    is_termux,
+    window_position_args,
+)
 from gflow_cli.config import BrowserEngine, Settings
 from gflow_cli.diagnostics import IncidentRecorder, run_retention, validated_incidents_root
 from gflow_cli.errors import (
@@ -503,14 +508,15 @@ class FlowApiClient:
         """
         kwargs: JsonObject = {
             "user_data_dir": str(self.profile_dir),
-            "headless": self.headless,
+            **browser_launch_options(
+                channel=channel_for_profile(self.profile_dir), headless=self.headless
+            ),
             "viewport": {"width": 1280, "height": 720},
             "locale": "en-US",
             "extra_http_headers": {"Accept-Language": "en-US,en;q=0.9"},
-            "channel": channel_for_profile(self.profile_dir),
             "ignore_default_args": [
                 "--enable-automation",
-                "--no-sandbox",
+                *([] if is_termux() else ["--no-sandbox"]),
             ],
             # Pass --password-store=basic EXPLICITLY (issue #222). auth login
             # (auth/real_chrome.py:69) and verification (auth/verification.py:246)
@@ -574,7 +580,7 @@ class FlowApiClient:
 
         channel = kwargs.get("channel")
         wants_chrome = chrome_strategy_requested(self.profile_dir)
-        executable = resolved_chrome_binary()
+        executable = kwargs.get("executable_path") or resolved_chrome_binary()
         # Resolve the cookie file the way auth/verification does (Chrome 130+
         # Default/Network/Cookies, then legacy Default/Cookies, then bundled
         # Cookies). Logging the actual path discriminates the H2 cookie-location
@@ -602,7 +608,7 @@ class FlowApiClient:
             ignore_default_args=kwargs.get("ignore_default_args"),
             password_store_basic="--password-store=basic" in launch_args,
         )
-        if wants_chrome and channel is None:
+        if wants_chrome and channel is None and not kwargs.get("executable_path"):
             msg = (
                 "Profile requests the 'chrome' browser strategy "
                 "(.gflow_browser_strategy=chrome) but Playwright's 'chrome' channel is "
@@ -620,7 +626,9 @@ class FlowApiClient:
             logger.warning("client.chrome_strategy_downgraded", detail=msg)
         # #477: refuse a bundled-Chromium open of a profile last written by a
         # newer Chromium — downgrade cleanup can shred the session store.
-        ensure_profile_engine_compatible(self.profile_dir, channel)
+        ensure_profile_engine_compatible(
+            self.profile_dir, channel, executable_path=kwargs.get("executable_path")
+        )
 
     async def _preread_flow_session_cookies(self) -> None:
         """#222: read the profile's Flow cookies BEFORE the headed generation

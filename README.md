@@ -2,6 +2,9 @@
 
 # gflow-cli
 
+Android/Termux source adaptation: [native Chromium setup and real-device acceptance](docs/TERMUX.md).
+Live Android validation is still pending; desktop behavior remains the default.
+
 > Python CLI and MCP server for Google Flow. Drive [Veo](https://labs.google/fx/tools/flow) (image-to-video, text-to-video) and Imagen (text-to-image) from your terminal: scripted, batched, pipeline-ready.
 
 [![PyPI version](https://img.shields.io/pypi/v/gflow-cli.svg)](https://pypi.org/project/gflow-cli/)

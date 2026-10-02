@@ -61,6 +61,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -74,13 +75,57 @@ log = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
+def is_termux() -> bool:
+    """Recognize native Termux, without treating ordinary Linux as Android."""
+    prefix = os.environ.get("PREFIX", "").rstrip("/")
+    return sys.platform in {"linux", "android"} and prefix in {
+        "/data/data/com.termux/files/usr",
+        "/data/user/0/com.termux/files/usr",
+    }
+
+
+def browser_launch_options(*, channel: str | None, headless: bool) -> dict[str, Any]:
+    """Select the same browser for login, cookie readers and generation.
+
+    Desktop defaults remain channel-based. An explicit CHROME_BINARY or native
+    Termux must never fall back to Playwright's bundled browser. Termux launches
+    stay visible, including verification, so all callers require DISPLAY.
+    """
+    termux = is_termux()
+    if termux and not os.environ.get("DISPLAY", "").strip():
+        raise ConfigurationError(
+            "Termux needs DISPLAY configured for visible Chromium.",
+            remediation_hint=(
+                "Install the Termux:X11 Android app, then run:\n"
+                "pkg install x11-repo\n"
+                "pkg install termux-x11-nightly\n"
+                "termux-x11 :1 &\n"
+                "export DISPLAY=:1\n"
+                "am start --user 0 -n com.termux.x11/com.termux.x11.MainActivity\n"
+                "Then retry gflow auth login."
+            ),
+        )
+    if termux or os.environ.get("CHROME_BINARY"):
+        options: dict[str, Any] = {
+            "executable_path": _find_chrome_binary(),
+            "headless": False if termux else headless,
+        }
+        if termux:
+            # Native Termux Chromium runs inside Android's app sandbox; its
+            # Linux namespace sandbox is unavailable (termux-playwright docs).
+            options["chromium_sandbox"] = False
+        return options
+    return {"channel": channel, "headless": headless}
+
+
 def _find_chrome_binary() -> str:
     """Locate the system Chrome binary.
 
     Resolution order:
     1. ``CHROME_BINARY`` env var (override)
-    2. ``shutil.which("chrome")`` / ``shutil.which("google-chrome")``
-    3. Platform-standard install paths (including Chromium as last resort for
+    2. Native Termux Chromium under PREFIX (no bundled/desktop fallback)
+    3. ``shutil.which("chrome")`` / ``shutil.which("google-chrome")``
+    4. Platform-standard install paths (including Chromium as last resort for
        non-Playwright-channel uses such as auth login).
 
     .. note::
@@ -95,6 +140,15 @@ def _find_chrome_binary() -> str:
     env_override = os.environ.get("CHROME_BINARY")
     if env_override:
         return env_override
+
+    if is_termux():
+        binary = os.environ["PREFIX"].rstrip("/") + "/lib/chromium/chrome"
+        if Path(binary).is_file():
+            return binary
+        raise ConfigurationError(
+            f"Termux Chromium not found at {binary}.",
+            remediation_hint="Run `pkg install chromium` or set CHROME_BINARY to its executable.",
+        )
 
     # 2. PATH probe — Google Chrome names first, Chromium last-resort
     for candidate in ("chrome", "google-chrome", "chromium"):
@@ -151,6 +205,8 @@ def is_playwright_chrome_channel_available() -> bool:
     ``executable_path=``, never via ``channel=``. Treating the env var as proof of
     a resolvable channel passed this gate and then failed at launch.
     """
+    if is_termux():
+        return False
     # Playwright's own resolution paths for channel="chrome". Derived from
     # playwright/_impl/_browser_type.py executables(). channel="chrome" resolves
     # ONLY to these exact Google-Chrome paths — a system Chromium does NOT
@@ -213,7 +269,7 @@ def window_position_args(position: str) -> list[str]:
     Shared by both generation launch sites (``FlowApiClient`` and the standalone
     ``UiAutomationTransport``) so they cannot drift. Login launches stay visible.
     """
-    return [f"--window-position={position}"] if position else []
+    return [f"--window-position={position}"] if position and not is_termux() else []
 
 
 def channel_for_profile(profile_dir: Path) -> str | None:
@@ -241,6 +297,8 @@ def channel_for_profile(profile_dir: Path) -> str | None:
     import structlog as _structlog
 
     _log = _structlog.get_logger(__name__)
+    if is_termux() or os.environ.get("CHROME_BINARY"):
+        return None
     marker = profile_dir / ".gflow_browser_strategy"
     if not marker.exists():
         return None
@@ -336,7 +394,9 @@ def _major_version(version: str) -> int | None:
         return None
 
 
-def ensure_profile_engine_compatible(profile_dir: Path, channel: str | None) -> None:
+def ensure_profile_engine_compatible(
+    profile_dir: Path, channel: str | None, *, executable_path: str | None = None
+) -> None:
     """Refuse to open ``profile_dir`` with an older bundled Chromium **major
     version** than last wrote it (#477).
 
@@ -346,13 +406,16 @@ def ensure_profile_engine_compatible(profile_dir: Path, channel: str | None) -> 
     major-version (milestone) only: the destructive cleanup is keyed to
     milestone downgrades, and a same-milestone build rollback (e.g. pinning
     Playwright back one patch release) is safe and must not brick generation.
-    Skipped when ``channel`` resolves to ``"chrome"`` (real Google Chrome
+    Skipped for an explicit executable or when ``channel`` resolves to ``"chrome"``
+    (real Google Chrome
     manages its own profile lifecycle) and whenever either version is unknown
     or unparseable (best-effort guard, never a new failure mode on odd hosts).
     Login is deliberately unguarded: it re-mints the session and rewrites the
     profile, making it the recovery path the remediation points at.
     """
-    if channel is not None:
+    # An external executable, like the Chrome channel, is not the bundled
+    # engine described by browsers.json. Never compare it to that version.
+    if channel is not None or executable_path is not None:
         return
     profile_version = profile_last_version(profile_dir)
     engine_version = installed_chromium_version()
