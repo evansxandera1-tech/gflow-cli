@@ -1,0 +1,19 @@
+MERVOX CLOUD FREE — DESPLIEGUE UNA SOLA VEZ
+
+1) Descomprime esta carpeta.
+2) Abre PowerShell dentro de la carpeta.
+3) Ejecuta:
+
+   npm install
+   npx wrangler login
+   npm run deploy
+
+4) Cloudflare mostrará una dirección parecida a:
+   https://mervox-cloud-free.xxxxx.workers.dev
+
+5) Abre esa dirección en el celular y añádela a la pantalla de inicio.
+
+DESPUÉS DE ESO:
+- No necesitas Termux.
+- No necesitas dejar la PC encendida.
+- Google Flow sigue disponible en tu Mervox de PC como segundo motor.
